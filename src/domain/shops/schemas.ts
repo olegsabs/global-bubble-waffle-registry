@@ -14,6 +14,19 @@ const optionalUrlSchema = z
   )
   .transform((value) => value ?? null);
 
+const optionalFiniteNumberSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  return parsed;
+}, z.number().optional());
+
 export const createShopSchema = z.object({
   name: z.string().trim().min(2).max(200),
   slug: z.string().trim().min(2).max(240).regex(/^[a-z0-9-]+$/).optional(),
@@ -59,28 +72,10 @@ export const shopListQuerySchema = z.object({
   search: z.string().trim().min(1).max(120).optional(),
   limit: z.coerce.number().int().min(1).default(200).transform((value) => Math.min(value, 1000)),
   offset: z.coerce.number().int().min(0).default(0),
-  west: z.coerce.number().min(-180).max(180).optional(),
-  south: z.coerce.number().min(-90).max(90).optional(),
-  east: z.coerce.number().min(-180).max(180).optional(),
-  north: z.coerce.number().min(-90).max(90).optional()
-}).superRefine((value, context) => {
-  const coordinates = [value.west, value.south, value.east, value.north];
-  const providedCount = coordinates.filter((coordinate) => coordinate !== undefined).length;
-
-  if (providedCount > 0 && providedCount < 4) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Bbox requires west, south, east, and north together."
-    });
-    return;
-  }
-
-  if (providedCount === 4 && value.south !== undefined && value.north !== undefined && value.south > value.north) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Bbox south cannot be greater than north."
-    });
-  }
+  west: optionalFiniteNumberSchema,
+  south: optionalFiniteNumberSchema,
+  east: optionalFiniteNumberSchema,
+  north: optionalFiniteNumberSchema
 });
 
 export type CreateShopInput = z.infer<typeof createShopSchema>;
