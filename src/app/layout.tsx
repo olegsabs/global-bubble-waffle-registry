@@ -18,8 +18,11 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <div className="relative min-h-screen pb-10">
           <header className="border-b border-batter-200/70 bg-white/80 backdrop-blur">
             <Container className="flex h-16 items-center justify-between">
-              <Link href="/" className="font-display text-lg text-ink sm:text-xl">
-                Global Bubble Waffle Registry
+              <Link href="/" className="flex items-center gap-2 font-display text-lg text-ink sm:text-xl">
+                <span>Global Bubble Waffle Registry</span>
+                <span className="inline-flex rounded-full border border-batter-300 bg-batter-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-batter-800">
+                  Beta
+                </span>
               </Link>
               <nav className="flex items-center gap-2 sm:gap-3">
                 <NavLink href="/map">Map</NavLink>

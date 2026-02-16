@@ -21,6 +21,51 @@ type FilterState = {
   status: "" | (typeof SHOP_STATUSES)[number];
 };
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeLongitude(value: number): number {
+  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
+
+  if (normalized === -180 && value > 0) {
+    return 180;
+  }
+
+  return normalized;
+}
+
+function sanitizeBounds(bounds: MapBounds): Omit<MapBounds, "zoom"> | null {
+  if (
+    !Number.isFinite(bounds.west) ||
+    !Number.isFinite(bounds.south) ||
+    !Number.isFinite(bounds.east) ||
+    !Number.isFinite(bounds.north)
+  ) {
+    return null;
+  }
+
+  const south = clamp(Math.min(bounds.south, bounds.north), -90, 90);
+  const north = clamp(Math.max(bounds.south, bounds.north), -90, 90);
+  const longitudeSpan = Math.abs(bounds.east - bounds.west);
+
+  if (longitudeSpan >= 360) {
+    return {
+      west: -180,
+      south,
+      east: 180,
+      north
+    };
+  }
+
+  return {
+    west: normalizeLongitude(bounds.west),
+    south,
+    east: normalizeLongitude(bounds.east),
+    north
+  };
+}
+
 export function MapExplorer() {
   const [filters, setFilters] = useState<FilterState>({
     search: "",
@@ -42,16 +87,22 @@ export function MapExplorer() {
   const tileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || DEFAULT_TILE_URL;
 
   const fetchShops = useCallback(async (nextBounds: MapBounds, signal: AbortSignal) => {
+    const sanitizedBounds = sanitizeBounds(nextBounds);
+
+    if (!sanitizedBounds) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     const params = new URLSearchParams({
       limit: "1000",
       offset: "0",
-      west: nextBounds.west.toString(),
-      south: nextBounds.south.toString(),
-      east: nextBounds.east.toString(),
-      north: nextBounds.north.toString()
+      west: sanitizedBounds.west.toString(),
+      south: sanitizedBounds.south.toString(),
+      east: sanitizedBounds.east.toString(),
+      north: sanitizedBounds.north.toString()
     });
 
     if (appliedFilters.search) params.set("search", appliedFilters.search);
@@ -193,11 +244,13 @@ export function MapExplorer() {
         {bounds && isLoading && <p className="text-sm text-ink/70">Loading map data...</p>}
       </div>
 
-      {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Unable to load map: {error}</div>
-      ) : (
-        <ShopsMap shops={shops} tileUrl={tileUrl} onBoundsChanged={handleBoundsChanged} />
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Unable to load map: {error}
+        </div>
       )}
+
+      <ShopsMap shops={shops} tileUrl={tileUrl} onBoundsChanged={handleBoundsChanged} />
     </section>
   );
 }

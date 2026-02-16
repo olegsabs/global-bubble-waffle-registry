@@ -10,6 +10,20 @@ function mapToShop(row: Record<string, unknown>): Shop {
   return row as unknown as Shop;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeLongitude(value: number): number {
+  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
+
+  if (normalized === -180 && value > 0) {
+    return 180;
+  }
+
+  return normalized;
+}
+
 export async function listShops(filters: ShopListQuery): Promise<{ shops: Shop[]; total: number }> {
   const client = createSupabaseAnonClient();
   const hasBbox =
@@ -38,18 +52,28 @@ export async function listShops(filters: ShopListQuery): Promise<{ shops: Shop[]
   }
 
   if (hasBbox) {
-    const west = filters.west as number;
-    const south = filters.south as number;
-    const east = filters.east as number;
-    const north = filters.north as number;
+    const rawWest = filters.west as number;
+    const rawSouth = filters.south as number;
+    const rawEast = filters.east as number;
+    const rawNorth = filters.north as number;
+    const south = clamp(Math.min(rawSouth, rawNorth), -90, 90);
+    const north = clamp(Math.max(rawSouth, rawNorth), -90, 90);
 
     query = query.gte("latitude", south).lte("latitude", north);
 
-    if (west <= east) {
-      query = query.gte("longitude", west).lte("longitude", east);
-    } else {
-      // Antimeridian case (e.g., west=170, east=-170)
-      query = query.or(`longitude.gte.${west},longitude.lte.${east}`);
+    const longitudeSpan = Math.abs(rawEast - rawWest);
+
+    if (longitudeSpan < 360) {
+      const west = normalizeLongitude(rawWest);
+      const east = normalizeLongitude(rawEast);
+
+      if (west <= east) {
+        query = query.gte("longitude", west).lte("longitude", east);
+      } else if (!filters.search) {
+        // Antimeridian case (e.g., west=170, east=-170).
+        // Skip this when search is present because PostgREST supports a single `or` clause.
+        query = query.or(`longitude.gte.${west},longitude.lte.${east}`);
+      }
     }
   }
 
