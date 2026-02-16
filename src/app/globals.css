@@ -1,0 +1,35 @@
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #231a0c;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 208, 107, 0.28), transparent 35%),
+    radial-gradient(circle at 85% 8%, rgba(248, 156, 33, 0.22), transparent 30%),
+    radial-gradient(circle at 35% 100%, rgba(221, 127, 22, 0.16), transparent 34%),
+    linear-gradient(135deg, #fff9ef 0%, #fff1d6 50%, #ffe9bf 100%);
+  font-family: "Avenir Next", "Nunito", ui-sans-serif, system-ui, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.input {
+  @apply h-11 w-full rounded-xl border border-batter-300 bg-white px-3 text-sm text-ink outline-none transition;
+  @apply focus:border-batter-500 focus:shadow-focus;
+}
