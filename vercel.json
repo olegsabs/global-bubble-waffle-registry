@@ -3,6 +3,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/discover",
+      "schedule": "0 3 * * *"
+    },
+    {
       "path": "/api/agent/promote",
       "schedule": "*/30 * * * *"
     }

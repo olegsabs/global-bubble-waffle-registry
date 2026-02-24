@@ -13,7 +13,8 @@ const serverEnvSchema = publicEnvSchema.extend({
   AGENT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10000).optional(),
   AGENT_PROMOTION_BATCH_SIZE: z.coerce.number().int().min(1).max(500).optional(),
   AGENT_PROMOTION_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).optional(),
-  CRON_SECRET: z.string().min(16).optional()
+  CRON_SECRET: z.string().min(16).optional(),
+  GOOGLE_PLACES_API_KEY: z.string().min(1).optional()
 });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
