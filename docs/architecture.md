@@ -16,6 +16,7 @@
 - **Intake queue**: public users submit unknown shops to `POST /api/submissions`, stored in `shop_submissions` for moderation.
 - **Discovery ingestion**: agents call `POST /api/agent/discover`; records are stored in `agent_discoveries`, run metadata in `agent_runs`.
 - **Verification ingestion**: agents call `POST /api/agent/verify`; canonical records in `shops` are updated and historical entries are written to `shop_verification_logs`.
+- **Promotion automation**: scheduler calls `GET /api/agent/promote`; high-confidence `pending` discoveries are deduplicated and promoted into canonical `shops`.
 - **Idempotency and throttling**: `x-idempotency-key`/`run_key` are supported, and request rate is controlled via database-backed run counting.
 
 ## Security model
@@ -26,6 +27,7 @@
   - Supabase user token with `app_metadata.role = "admin"`.
 - Submission API is intentionally public but uses honeypot field + server-side validation.
 - Agent APIs are admin-protected and write via service-role on the server.
+- Scheduled agent routes can also use `CRON_SECRET` bearer token.
 - Agent tables (`agent_runs`, `agent_discoveries`, `shop_verification_logs`) are RLS-enabled and not publicly readable.
 - `shop_media` is publicly readable for profile rendering.
 

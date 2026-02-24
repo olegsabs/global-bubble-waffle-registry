@@ -79,7 +79,65 @@ export const agentVerifyRequestSchema = z.object({
   checks: z.array(verifyRecordSchema).min(1).max(500)
 });
 
+const optionalBooleanSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+
+      if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+
+      if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+
+    return value;
+  },
+  z.boolean().optional()
+);
+
+export const agentPromoteQuerySchema = z.object({
+  run_key: optionalRunKeySchema,
+  source: z.string().trim().min(2).max(80).default("promotion-agent"),
+  notes: optionalStringSchema,
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  min_confidence: z.coerce.number().min(0).max(1).default(0.7),
+  dry_run: optionalBooleanSchema.default(false)
+});
+
 export type AgentDiscoverRequestInput = z.infer<typeof agentDiscoverRequestSchema>;
 export type AgentVerifyRequestInput = z.infer<typeof agentVerifyRequestSchema>;
+export type AgentPromoteQueryInput = z.infer<typeof agentPromoteQuerySchema>;
 export type DiscoveryRecordInput = z.infer<typeof discoveryRecordSchema>;
 export type VerifyRecordInput = z.infer<typeof verifyRecordSchema>;
+
+export function parseAgentPromoteQuery(
+  searchParams: URLSearchParams,
+  defaults?: { limit?: number; minConfidence?: number }
+): AgentPromoteQueryInput {
+  const raw: Record<string, string> = {};
+
+  for (const [key, value] of searchParams.entries()) {
+    raw[key] = value;
+  }
+
+  if (defaults?.limit !== undefined && raw.limit === undefined) {
+    raw.limit = String(defaults.limit);
+  }
+
+  if (defaults?.minConfidence !== undefined && raw.min_confidence === undefined) {
+    raw.min_confidence = String(defaults.minConfidence);
+  }
+
+  return agentPromoteQuerySchema.parse(raw);
+}

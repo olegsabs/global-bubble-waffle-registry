@@ -29,6 +29,7 @@ Production-ready, AI-native registry platform for bubble waffle shops worldwide.
 - Agent APIs:
   - `POST /api/agent/discover`
   - `POST /api/agent/verify`
+  - `GET /api/agent/promote`
 - Structured logging and environment validation.
 
 ## Project structure
@@ -50,6 +51,9 @@ Copy `.env.example` to `.env.local` and fill values:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ADMIN_API_KEY`
 - `AGENT_RATE_LIMIT_PER_MINUTE` (optional, default `60`)
+- `AGENT_PROMOTION_BATCH_SIZE` (optional, default `100`)
+- `AGENT_PROMOTION_MIN_CONFIDENCE` (optional, default `0.7`)
+- `CRON_SECRET` (required for secure Vercel cron execution)
 - `NEXT_PUBLIC_MAP_TILE_URL` (optional)
 
 ## Local setup
@@ -199,13 +203,29 @@ Example payload:
 }
 ```
 
+### `GET /api/agent/promote` (admin or cron)
+
+Auth:
+
+- `Authorization: Bearer <ADMIN_API_KEY or Supabase admin JWT>`
+- or `Authorization: Bearer <CRON_SECRET>` for scheduled runs
+
+Query params:
+
+- `limit` (default `100`, max `500`)
+- `min_confidence` (default `0.7`)
+- `dry_run` (`true|false`, default `false`)
+- `source` (default `promotion-agent`)
+- `run_key` (optional idempotency key)
+
 ## Deployment (Vercel)
 
 1. Push repository to Git provider.
 2. Import project into Vercel.
 3. Set all env vars in Vercel project settings.
-4. Deploy.
-5. Confirm API and map pages:
+4. Set `CRON_SECRET` and keep it private. Vercel cron will call `/api/agent/promote` every 30 minutes.
+5. Deploy.
+6. Confirm API and map pages:
    - `/api/shops`
    - `/map`
    - `/submit`

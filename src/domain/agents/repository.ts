@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type {
   AgentRunStatus,
   AgentType,
+  ShopFormat,
   ShopStatus
 } from "@/types/database";
 import type {
@@ -11,6 +12,7 @@ import type {
   DiscoveryRecordInput,
   VerifyRecordInput
 } from "@/domain/agents/schemas";
+import { createShop } from "@/domain/shops/repository";
 import { createSupabaseServiceClient } from "@/lib/supabase/clients";
 
 export type AgentRunSnapshot = {
@@ -327,5 +329,197 @@ export async function applyVerificationChecks(input: {
     failed,
     logsInserted,
     logFailures
+  };
+}
+
+type PendingDiscoveryRow = {
+  id: string;
+  name: string;
+  country: string;
+  city: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  instagram_url: string | null;
+  website_url: string | null;
+  format: ShopFormat;
+  status: ShopStatus;
+  discovery_confidence: number;
+};
+
+type CandidateShopRow = {
+  id: string;
+  name: string;
+  country: string;
+  city: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isLikelyDuplicate(discovery: PendingDiscoveryRow, candidate: CandidateShopRow): boolean {
+  const sameName = normalizeText(discovery.name) === normalizeText(candidate.name);
+  const sameAddress = normalizeText(discovery.address) === normalizeText(candidate.address);
+  const sameCity = normalizeText(discovery.city) === normalizeText(candidate.city);
+  const sameCountry = normalizeText(discovery.country) === normalizeText(candidate.country);
+  const latitudeDelta = Math.abs(discovery.latitude - candidate.latitude);
+  const longitudeDelta = Math.abs(discovery.longitude - candidate.longitude);
+  const isCoordinateNear = latitudeDelta <= 0.0025 && longitudeDelta <= 0.0025;
+
+  if (sameName && sameAddress && sameCity && sameCountry) {
+    return true;
+  }
+
+  if (sameName && sameCity && sameCountry && isCoordinateNear) {
+    return true;
+  }
+
+  return false;
+}
+
+async function findDuplicateShopId(discovery: PendingDiscoveryRow): Promise<string | null> {
+  const client = createSupabaseServiceClient();
+  const latitudeWindow = 0.02;
+  const longitudeWindow = 0.02;
+
+  const { data, error } = await client
+    .from("shops")
+    .select("id,name,country,city,address,latitude,longitude")
+    .eq("country", discovery.country)
+    .eq("city", discovery.city)
+    .gte("latitude", discovery.latitude - latitudeWindow)
+    .lte("latitude", discovery.latitude + latitudeWindow)
+    .gte("longitude", discovery.longitude - longitudeWindow)
+    .lte("longitude", discovery.longitude + longitudeWindow)
+    .limit(50);
+
+  if (error) {
+    throw new Error(`Failed to check duplicate shops: ${error.message}`);
+  }
+
+  for (const row of (data ?? []) as CandidateShopRow[]) {
+    if (isLikelyDuplicate(discovery, row)) {
+      return row.id;
+    }
+  }
+
+  return null;
+}
+
+async function markDiscoveryProcessed(params: {
+  discoveryId: string;
+  runId: string;
+  ingestionStatus: "promoted" | "duplicate";
+  promotedShopId: string;
+}): Promise<void> {
+  const client = createSupabaseServiceClient();
+
+  const { error } = await client
+    .from("agent_discoveries")
+    .update({
+      agent_run_id: params.runId,
+      ingestion_status: params.ingestionStatus,
+      promoted_shop_id: params.promotedShopId,
+      processed_at: new Date().toISOString()
+    })
+    .eq("id", params.discoveryId);
+
+  if (error) {
+    throw new Error(`Failed to mark discovery ${params.discoveryId} as ${params.ingestionStatus}: ${error.message}`);
+  }
+}
+
+export async function promotePendingDiscoveries(input: {
+  runId: string;
+  limit: number;
+  minConfidence: number;
+  dryRun: boolean;
+}): Promise<{
+  processed: number;
+  promoted: number;
+  duplicates: number;
+  skipped: number;
+  failed: number;
+}> {
+  const client = createSupabaseServiceClient();
+
+  const { data, error } = await client
+    .from("agent_discoveries")
+    .select("id,name,country,city,address,latitude,longitude,instagram_url,website_url,format,status,discovery_confidence")
+    .eq("ingestion_status", "pending")
+    .gte("discovery_confidence", input.minConfidence)
+    .order("discovery_confidence", { ascending: false })
+    .order("discovered_at", { ascending: true })
+    .limit(input.limit);
+
+  if (error) {
+    throw new Error(`Failed to load pending discoveries for promotion: ${error.message}`);
+  }
+
+  let promoted = 0;
+  let duplicates = 0;
+  let failed = 0;
+
+  for (const discovery of (data ?? []) as PendingDiscoveryRow[]) {
+    try {
+      const duplicateShopId = await findDuplicateShopId(discovery);
+
+      if (duplicateShopId) {
+        duplicates += 1;
+
+        if (!input.dryRun) {
+          await markDiscoveryProcessed({
+            discoveryId: discovery.id,
+            runId: input.runId,
+            ingestionStatus: "duplicate",
+            promotedShopId: duplicateShopId
+          });
+        }
+
+        continue;
+      }
+
+      promoted += 1;
+
+      if (input.dryRun) {
+        continue;
+      }
+
+      const createdShop = await createShop({
+        name: discovery.name,
+        country: discovery.country,
+        city: discovery.city,
+        address: discovery.address,
+        latitude: discovery.latitude,
+        longitude: discovery.longitude,
+        instagram_url: discovery.instagram_url,
+        website_url: discovery.website_url,
+        status: discovery.status,
+        format: discovery.format,
+        created_source: "agent",
+        verification_confidence: discovery.discovery_confidence
+      });
+
+      await markDiscoveryProcessed({
+        discoveryId: discovery.id,
+        runId: input.runId,
+        ingestionStatus: "promoted",
+        promotedShopId: createdShop.id
+      });
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return {
+    processed: (data ?? []).length,
+    promoted,
+    duplicates,
+    skipped: Math.max(0, (data ?? []).length - promoted - duplicates),
+    failed
   };
 }
